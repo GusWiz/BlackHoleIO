@@ -1,0 +1,1 @@
+first ran this "npm create vite@latest client -- --template react-ts", which create a react-ts template for the project. Then i cd "client", ran "npm install" to install all the dependencies. Then ran "npm run dev" to start the server.
