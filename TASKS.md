@@ -12,17 +12,17 @@
 - [x] Install dependencies (`react`, `react-dom`, `vite`)
 - [x] Configure `vite.config.ts`
 - [x] Add base ESLint / Prettier config
-- [ ] Set up **Node.js + Socket.IO** game server in `/server`
-- [ ] Initialize `package.json`
-- [ ] Install `socket.io`, `express`, `dotenv`
-- [ ] Create basic `server.js` entry point
-- [ ] Set up **Python + FastAPI** in `/api`
-- [ ] Create virtual environment (`uv` or `venv`)
-- [ ] Install `fastapi`, `uvicorn`, `pydantic`
-- [ ] Create basic `main.py` entry point
-- [ ] Create root-level `.gitignore` covering Node, Python, and Vite artifacts
-- [ ] Write initial `README.md` with setup instructions
-- [ ] Set up environment variable files (`.env.example` for each sub-project)
+- [x] Set up **Node.js + Socket.IO** game server in `/server`
+- [x] Initialize `package.json`
+- [x] Install `socket.io`, `express`, `dotenv`
+- [x] Create basic `server.js` entry point
+- [x] Set up **Python + FastAPI** in `/api`
+- [x] Create virtual environment (`uv` or `venv`)
+- [x] Install `fastapi`, `uvicorn`, `pydantic`
+- [x] Create basic `main.py` entry point
+- [x] Create root-level `.gitignore` covering Node, Python, and Vite artifacts
+- [x] Write initial `README.md` with setup instructions
+- [x] Set up environment variable files (`.env.example` for each sub-project)
 
 ---
 

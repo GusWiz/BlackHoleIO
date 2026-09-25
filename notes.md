@@ -8,3 +8,8 @@ npm install -D nodemon
 3. cors: Enables Cross-Origin Resource Sharing. This lets your React app (running on port 5173) talk to your Node.js server (running on port 3000) without the browser blocking it.
 4. dotenv: Loads configuration settings (like server ports) from a .env file.
 5. nodemon (-D for dev dependency): Automatically restarts your server whenever you save changes to your server code so you don't have to restart it manually.
+
+Created venv in the \api folder:
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install fastapi uvicorn pydantic
