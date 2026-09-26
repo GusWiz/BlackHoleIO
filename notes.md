@@ -13,3 +13,9 @@ Created venv in the \api folder:
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install fastapi uvicorn pydantic
+
+export default function is a function that returns the default export of the module. Aka when you are importing a function from another file, this will be the default function imported. You can renamed it when importing.
+
+useEffect() is a hook in react that is used to perform side effects in a functional component (i.e. fetching data from an API, setting up subscriptions, or manually interacting with the browser DOM).
+The first argument to useEffect() is a function that contains the side effect code.
+The second argument to useEffect() is an optional array of dependencies. If the dependencies change between renders, the effect function will be re-run. It is a function that is called after the component is rendered.
