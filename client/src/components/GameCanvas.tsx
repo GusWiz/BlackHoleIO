@@ -439,9 +439,9 @@ export default function GameCanvas() {
 
       // "Minimap" label
       ctx.font = '500 9px system-ui, sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
       ctx.textAlign = 'left';
-      ctx.fillText('MINIMAP', MM_X + 6, MM_Y + 11);
+      ctx.fillText('MINIMAP', MM_X + MM_H/2, MM_Y - 5);
 
       // Draw mass objects as tiny colored dots on the minimap
       massObjects.forEach((obj) => {
