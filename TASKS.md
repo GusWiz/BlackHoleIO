@@ -28,18 +28,18 @@
 
 ## Phase 2  Core Game Mechanics (Client-Side)
 
-- [ ] Create a fullscreen `<canvas>` game renderer
-- [ ] Implement basic game loop (`requestAnimationFrame`)
-- [ ] Design the **black hole entity**
-- [ ] Visual: animated gravitational lensing ring effect
-- [ ] Size grows as mass is absorbed
-- [ ] Player-controlled movement (mouse or WASD)
-- [ ] Implement **world map** with wrap-around or bounded edges
-- [ ] Add **floating mass objects** (stars, debris) scattered across the map
-- [ ] Implement **absorption logic**  player absorbs smaller objects/players on contact
-- [ ] Add **camera/viewport** that follows the player's black hole
-- [ ] Add **minimap** showing player positions
-- [ ] Implement **leaderboard UI** (live ranking by mass)
+- [x] Create a fullscreen `<canvas>` game renderer
+- [x] Implement basic game loop (`requestAnimationFrame`)
+- [x] Design the **black hole entity**
+- [x] Visual: animated gravitational lensing ring effect
+- [x] Size grows as mass is absorbed
+- [x] Player-controlled movement (mouse or WASD)
+- [x] Implement **world map** with wrap-around or bounded edges
+- [x] Add **floating mass objects** (stars, debris) scattered across the map
+- [x] Implement **absorption logic**  player absorbs smaller objects/players on contact
+- [x] Add **camera/viewport** that follows the player's black hole
+- [x] Add **minimap** showing player positions
+- [x] Implement **leaderboard UI** (live ranking by mass)
 
 ---
 

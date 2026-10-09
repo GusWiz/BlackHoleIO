@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 
-// This is a TypeScript 'interface'. It acts as a blueprint or contract.
-// It tells TypeScript exactly what properties a 'Player' object must have
-// and what type of data each property should be (numbers or text strings).
-// This helps prevent bugs by making sure we don't accidentally forget a property or use the wrong data type.
+// =============================================================================
+// TYPESCRIPT INTERFACES (Blueprints / Contracts for our data shapes)
+// =============================================================================
+
+// Describes the shape of the player-controlled black hole.
 interface Player {
   x: number;
   y: number;
@@ -13,261 +14,545 @@ interface Player {
   name: string;
 }
 
+// Describes a floating mass object (star / debris) scattered around the world.
+interface MassObject {
+  id: number;      // Unique identifier so we can remove it when absorbed
+  x: number;       // World X position
+  y: number;       // World Y position
+  radius: number;  // How large this object is
+  mass: number;    // How much mass it grants the player on absorption
+  color: string;   // Glow color
+  pulseOffset: number; // Each star has its own pulse phase so they don't all pulse in sync
+}
+
+// =============================================================================
+// WORLD CONSTANTS
+// =============================================================================
+
+// The total size of the game world. The player can scroll around inside this.
+// Think of it like a large map — the viewport only shows a portion at a time.
+const WORLD_WIDTH = 4000;
+const WORLD_HEIGHT = 4000;
+
+// How many floating mass objects exist in the world at once.
+const MASS_OBJECT_COUNT = 120;
+
+// The base mass we start with (used to compute radius from mass).
+const BASE_MASS = 50;
+const BASE_RADIUS = 35;
+
+// =============================================================================
+// UTILITY: Calculate radius from mass
+// As the player absorbs objects, mass grows. Radius grows proportionally.
+// We use a square root so it doesn't grow too fast — same formula agar.io uses.
+// =============================================================================
+function massToRadius(mass: number): number {
+  return BASE_RADIUS * Math.sqrt(mass / BASE_MASS);
+}
+
+// =============================================================================
+// UTILITY: Generate a random floating mass object at a random world position.
+// =============================================================================
+function spawnMassObject(id: number): MassObject {
+  const mass = Math.random() * 18 + 4; // Random mass between 4 and 22
+  const glowColors = [
+    '#4cc9f0', // Cyan
+    '#f72585', // Pink
+    '#7209b7', // Purple
+    '#4361ee', // Blue
+    '#ffd60aff', // Yellow
+    '#80ffdb', // Mint
+  ];
+  return {
+    id,
+    x: Math.random() * WORLD_WIDTH,
+    y: Math.random() * WORLD_HEIGHT,
+    radius: Math.max(4, mass * 0.7),
+    mass,
+    color: glowColors[Math.floor(Math.random() * glowColors.length)],
+    pulseOffset: Math.random() * Math.PI * 2, // Random starting phase
+  };
+}
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
+
 export default function GameCanvas() {
-  // useRef is a React Hook that creates a persistent "box" to hold data across re-renders.
-  // The `<HTMLCanvasElement | null>` part is TypeScript. It means "this box will either hold a 
-  // Canvas HTML element, or it will be empty (null)".
-  // We initialize it with `null`, and later React will put the actual `<canvas>` element inside it.
+  // useRef creates a persistent "box" holding our canvas DOM element across re-renders.
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // useEffect is a React Hook that runs code AFTER the component has been drawn on the screen.
-  // We use it here to start our game loop once the `<canvas>` is actually ready.
-  // The empty array `[]` at the end means "only run this setup code exactly once when the component first loads".
+  // useEffect runs AFTER React mounts the <canvas> to the DOM.
+  // The empty array [] means it runs exactly once on mount.
   useEffect(() => {
-    // Open the "box" and get the actual canvas DOM element.
     const canvas = canvasRef.current;
+    if (!canvas) return; // Safety check: canvas must exist
 
-    // // Safety check: if the canvas doesn't exist yet, stop right here.
-    // if (!canvas) return;
-
-    // getContext('2d') gives us the "drawing engine" for the canvas.
-    // It returns an object containing all the methods we need to draw shapes, lines, colors, etc.
+    // Get the 2D drawing engine
     const ctx = canvas.getContext('2d');
+    if (!ctx) return; // Safety check: 2D context must be available
 
-    // Safety check: if the browser fails to create the 2D drawing engine, stop right here.
-    if (!ctx) return;
-
-    // We need to keep track of our animation frame so we can stop the loop later.
     let animationFrameId: number;
 
-    // --- CANVAS SIZING & HIGH-RESOLUTION DISPLAY SUPPORT ---
+    // -------------------------------------------------------------------------
+    // CANVAS SIZING — Retina / High-DPI display support
+    // -------------------------------------------------------------------------
     const handleResize = () => {
-      // Get the display's pixel density. High-end screens (like Mac Retina) have a ratio of 2 or more,
-      // meaning they pack 2 or more physical pixels into a single CSS pixel.
+      // devicePixelRatio is how many physical pixels fit in one CSS pixel.
+      // On a Retina display, dpr = 2 (or higher), so we scale the buffer up.
       const dpr = window.devicePixelRatio || 1;
-
-      // Set the actual number of pixels in the canvas drawing buffer.
-      // We multiply by dpr so the image doesn't look blurry on high-resolution screens.
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
-
-      // Reset any previous zooming or scaling.
       ctx.resetTransform();
-      // Tell the drawing engine to zoom in based on the pixel ratio.
-      // Now, when we say "draw 10 pixels", it will actually draw 20 pixels on a Retina screen, keeping things sharp.
-      ctx.scale(dpr, dpr);
+      ctx.scale(dpr, dpr); // From here on, we think in CSS pixels, not physical pixels
     };
 
-    // Tell the browser to run our resize function whenever the user changes the window size.
     window.addEventListener('resize', handleResize);
-    // Call it once immediately to set the initial size.
     handleResize();
 
-    // --- INITIALIZE PLAYER ---
-    // We create an object that follows the 'Player' blueprint we defined at the top.
+    // -------------------------------------------------------------------------
+    // PLAYER STATE — starts in the center of the world map
+    // -------------------------------------------------------------------------
     const player: Player = {
-      x: window.innerWidth / 2, // Start in the middle horizontally
-      y: window.innerHeight / 2, // Start in the middle vertically
-      mass: 50,
-      radius: 35,
+      x: WORLD_WIDTH / 2,
+      y: WORLD_HEIGHT / 2,
+      mass: BASE_MASS,
+      radius: BASE_RADIUS,
       color: '#9d4edd',
       name: 'Player',
     };
 
-    // --- MOUSE TRACKING ---
-    // We create a simple object to remember where the mouse currently is.
+    // -------------------------------------------------------------------------
+    // MOUSE TRACKING
+    // The mouse position is in screen/viewport coordinates (0,0 = top-left of window).
+    // We convert it to a world-relative direction later for movement.
+    // -------------------------------------------------------------------------
     const mouse = {
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
     };
 
-    // Every time the mouse moves, update our mouse object with the new coordinates.
     const handleMouseMove = (e: MouseEvent) => {
       mouse.x = e.clientX;
       mouse.y = e.clientY;
     };
 
-    // Listen for mouse movements anywhere on the window.
     window.addEventListener('mousemove', handleMouseMove);
 
-    // This variable helps us create smooth, pulsating animations (like a heartbeat)
-    // by constantly increasing and feeding it into a sine wave later.
+    // -------------------------------------------------------------------------
+    // FLOATING MASS OBJECTS — scattered randomly across the world
+    // -------------------------------------------------------------------------
+    // We use a Map for O(1) deletion when an object is absorbed.
+    const massObjects = new Map<number, MassObject>();
+    for (let i = 0; i < MASS_OBJECT_COUNT; i++) {
+      massObjects.set(i, spawnMassObject(i));
+    }
+
+    // Tracks the next ID to assign to a newly spawned object
+    let nextObjectId = MASS_OBJECT_COUNT;
+
+    // Animation time tracker — used for pulsating glow effects
     let pulseTime = 0;
 
-    // --- THE GAME LOOP ---
-    // This function will run 60 times every second (or whatever the screen refresh rate is).
-    // Everything that moves or changes in the game happens inside this loop.
+    // =========================================================================
+    // THE GAME LOOP
+    // Called ~60 times per second by the browser via requestAnimationFrame.
+    // Each call draws one "frame" of the game.
+    // =========================================================================
     const gameLoop = () => {
-      // Increase the time slightly every frame.
       pulseTime += 0.03;
 
-      // --- 1. CLEAR THE SCREEN ---
-      // Before drawing the new frame, we must erase the old one!
-      // We fill the entire canvas with a very dark blue/black color.
-      ctx.fillStyle = '#05050f';
-      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
 
-      // --- 2. DRAW BACKGROUND GRID ---
-      // We draw faint lines to help give a sense of movement and scale.
-      const gridSize = 60; // Space between grid lines
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)'; // Faint, mostly transparent white
+      // -----------------------------------------------------------------------
+      // STEP 1: CLEAR THE SCREEN
+      // Fill the entire canvas with the background color to erase the last frame.
+      // -----------------------------------------------------------------------
+      ctx.fillStyle = '#05050f';
+      ctx.fillRect(0, 0, vw, vh);
+
+      // -----------------------------------------------------------------------
+      // STEP 2: CAMERA / VIEWPORT TRANSFORM
+      //
+      // The "camera" is just a math trick:
+      //   cameraX = player.x - half the screen width
+      //   cameraY = player.y - half the screen height
+      //
+      // This tells us how far the world has "scrolled" relative to the screen.
+      // To draw any world object on screen, we subtract the camera offset:
+      //   screenX = worldX - cameraX
+      //   screenY = worldY - cameraY
+      // -----------------------------------------------------------------------
+      const cameraX = player.x - vw / 2;
+      const cameraY = player.y - vh / 2;
+
+      // -----------------------------------------------------------------------
+      // STEP 3: DRAW BACKGROUND GRID (in world space)
+      //
+      // The grid tiles across the world. We use the modulo (%) operator to
+      // figure out where the first visible grid line is, based on the camera offset.
+      // This makes the grid "scroll" smoothly with the camera.
+      // -----------------------------------------------------------------------
+      const gridSize = 60;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
       ctx.lineWidth = 1;
 
-      // Draw vertical lines
-      for (let x = 0; x < window.innerWidth; x += gridSize) {
-        ctx.beginPath(); // Start a new path (like picking up a pen)
-        ctx.moveTo(x, 0); // Move pen to the top of the screen
-        ctx.lineTo(x, window.innerHeight); // Draw line to the bottom
-        ctx.stroke(); // Actually put the ink on the canvas
-      }
+      // Offset: where the first grid line appears on screen
+      const gridOffsetX = ((-cameraX) % gridSize + gridSize) % gridSize;
+      const gridOffsetY = ((-cameraY) % gridSize + gridSize) % gridSize;
 
-      // Draw horizontal lines
-      for (let y = 0; y < window.innerHeight; y += gridSize) {
+      // Draw vertical lines
+      for (let x = gridOffsetX; x < vw; x += gridSize) {
         ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(window.innerWidth, y);
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, vh);
         ctx.stroke();
       }
 
-      // --- 3. UPDATE PLAYER MOVEMENT ---
-      // Calculate how far the mouse is from the player on the X and Y axes.
-      const dx = mouse.x - player.x;
-      const dy = mouse.y - player.y;
-
-      // Math.hypot calculates the straight-line distance between the player and mouse 
-      // (using the Pythagorean theorem).
-      const distance = Math.hypot(dx, dy);
-
-      // Calculate speed based on mass. Heavier players move slower.
-      const speed = Math.max(1.5, 6 - player.mass * 0.02);
-
-      // Only move if the mouse is far enough away (prevents jittering when exactly on top of the mouse).
-      if (distance > 5) {
-        // We use some math to move a fraction of the distance towards the mouse.
-        // dx / distance gives us the "direction", which we multiply by our speed.
-        player.x += (dx / distance) * Math.min(speed, distance * 0.08);
-        player.y += (dy / distance) * Math.min(speed, distance * 0.08);
+      // Draw horizontal lines
+      for (let y = gridOffsetY; y < vh; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(vw, y);
+        ctx.stroke();
       }
 
-      // Ensure the player cannot leave the screen boundaries.
-      // Math.max and Math.min are used to clamp the player's X/Y coordinates 
-      // between the edge of their radius and the edge of the screen.
-      player.x = Math.max(player.radius, Math.min(window.innerWidth - player.radius, player.x));
-      player.y = Math.max(player.radius, Math.min(window.innerHeight - player.radius, player.y));
+      // -----------------------------------------------------------------------
+      // STEP 4: DRAW WORLD BOUNDARY
+      //
+      // Show the edges of the game world as a glowing border.
+      // We convert world boundary coordinates (0,0) and (WORLD_WIDTH, WORLD_HEIGHT)
+      // into screen coordinates by subtracting the camera offset.
+      // -----------------------------------------------------------------------
+      const worldLeft = 0 - cameraX;
+      const worldTop = 0 - cameraY;
+      const worldRight = WORLD_WIDTH - cameraX;
+      const worldBottom = WORLD_HEIGHT - cameraY;
 
-      // --- 4. DRAW THE BLACK HOLE PLAYER ---
+      ctx.save();
+      ctx.strokeStyle = 'rgba(157, 78, 221, 0.5)';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#9d4edd';
+      ctx.shadowBlur = 20;
+      ctx.strokeRect(worldLeft, worldTop, WORLD_WIDTH, WORLD_HEIGHT);
+      ctx.restore();
+
+      // -----------------------------------------------------------------------
+      // STEP 5: DRAW FLOATING MASS OBJECTS
+      //
+      // For each object in the world, convert its position to screen space
+      // and draw it as a glowing dot if it is within the visible viewport.
+      // -----------------------------------------------------------------------
+      massObjects.forEach((obj) => {
+        // Convert world position → screen position
+        const sx = obj.x - cameraX;
+        const sy = obj.y - cameraY;
+
+        // Cull: skip drawing objects completely outside the screen (performance optimization)
+        if (sx < -obj.radius * 3 || sx > vw + obj.radius * 3 ||
+          sy < -obj.radius * 3 || sy > vh + obj.radius * 3) {
+          return;
+        }
+
+        // Each object has its own pulse phase so they twinkle independently
+        const objPulse = Math.sin(pulseTime + obj.pulseOffset) * 2;
+
+        ctx.save();
+
+        // Outer soft glow
+        const objGradient = ctx.createRadialGradient(sx, sy, 0, sx, sy, obj.radius * 2.5 + objPulse);
+        objGradient.addColorStop(0, obj.color.slice(0, 7) + '99'); // Ensure base 6-char hex before adding opacity
+
+        // Draw the glow halo using a simpler approach: shadow blur
+        ctx.beginPath();
+        ctx.arc(sx, sy, obj.radius + objPulse * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = obj.color;
+        ctx.shadowColor = obj.color;
+        ctx.shadowBlur = 18;
+        ctx.fill();
+
+        // Bright core center
+        ctx.beginPath();
+        ctx.arc(sx, sy, obj.radius * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 8;
+        ctx.fill();
+
+        ctx.restore();
+      });
+
+      // -----------------------------------------------------------------------
+      // STEP 6: UPDATE PLAYER MOVEMENT
+      //
+      // The player chases the mouse cursor.
+      // IMPORTANT: The mouse is in screen space. We treat the screen center as the
+      // "neutral" position. How far the mouse is from screen center tells us direction.
+      // -----------------------------------------------------------------------
+      const screenCenterX = vw / 2;
+      const screenCenterY = vh / 2;
+
+      // Direction vector from screen center to mouse cursor
+      const dx = mouse.x - screenCenterX;
+      const dy = mouse.y - screenCenterY;
+      const distance = Math.hypot(dx, dy);
+
+      // Heavier players move slightly slower
+      const speed = Math.max(1.5, 6 - player.mass * 0.015);
+
+      // Dead zone: don't move if mouse is very close to center (prevents jitter)
+      if (distance > 8) {
+        const moveAmount = Math.min(speed, distance * 0.06);
+        player.x += (dx / distance) * moveAmount;
+        player.y += (dy / distance) * moveAmount;
+      }
+
+      // Clamp player inside world boundaries
+      player.x = Math.max(player.radius, Math.min(WORLD_WIDTH - player.radius, player.x));
+      player.y = Math.max(player.radius, Math.min(WORLD_HEIGHT - player.radius, player.y));
+
+      // -----------------------------------------------------------------------
+      // STEP 7: ABSORPTION LOGIC
+      //
+      // Check every mass object to see if the player overlaps it.
+      // Overlap = distance between centers < player radius (player is bigger).
+      // If absorbed: increase player mass, resize radius, remove the object,
+      // and spawn a new one at a random location.
+      // -----------------------------------------------------------------------
+      const toDelete: number[] = [];
+
+      massObjects.forEach((obj) => {
+        const dist = Math.hypot(player.x - obj.x, player.y - obj.y);
+
+        // Absorption condition: player center overlaps into the object
+        if (dist < player.radius + obj.radius * 0.5) {
+          // Grow the player's mass
+          player.mass += obj.mass;
+
+          // Recalculate radius from new mass (square root scaling)
+          player.radius = massToRadius(player.mass);
+
+          // Mark this object for deletion (can't delete while iterating the Map)
+          toDelete.push(obj.id);
+        }
+      });
+
+      // Remove absorbed objects and spawn replacements at random world positions
+      toDelete.forEach((id) => {
+        massObjects.delete(id);
+        const newObj = spawnMassObject(nextObjectId++);
+        massObjects.set(newObj.id, newObj);
+      });
+
+      // -----------------------------------------------------------------------
+      // STEP 8: DRAW THE PLAYER (BLACK HOLE) — in screen space
+      //
+      // The player is always drawn at the center of the screen.
+      // The camera transform handles making the world appear to move around them.
+      // -----------------------------------------------------------------------
+      const px = screenCenterX; // Player is always visually at the screen center
+      const py = screenCenterY;
       const r = player.radius;
-      // Math.sin(pulseTime) returns a value smoothly oscillating between -1 and 1.
-      // We multiply by 3 to make the pulse noticeable.
       const pulse = Math.sin(pulseTime) * 3;
 
-      // --- A. Outer Gravitational Lensing Glow ---
-      // We create a radial gradient, which is a color that fades from a center circle out to an outer circle.
+      // --- A. Outer Gravitational Lensing Glow (Accretion Disk) ---
       const glowGradient = ctx.createRadialGradient(
-        player.x, player.y, r * 0.7,             // Inner circle (starting point of gradient)
-        player.x, player.y, r * 2.2 + pulse      // Outer circle (ending point of gradient, pulsating)
+        px, py, r * 0.7,
+        px, py, r * 2.2 + pulse
       );
-
-      // Define the colors of the gradient at different percentages (0 to 1).
       glowGradient.addColorStop(0, 'rgba(157, 78, 221, 0.8)');
       glowGradient.addColorStop(0.4, 'rgba(114, 9, 183, 0.4)');
       glowGradient.addColorStop(0.8, 'rgba(76, 201, 240, 0.15)');
-      glowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)'); // Fades to completely transparent
+      glowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
-      ctx.save(); // Save the current state of the drawing engine
+      ctx.save();
       ctx.beginPath();
-      // ctx.arc draws a circle: arc(x, y, radius, startAngle, endAngle)
-      // Math.PI * 2 is the radian equivalent of 360 degrees (a full circle).
-      ctx.arc(player.x, player.y, r * 2.2 + pulse, 0, Math.PI * 2);
-      ctx.fillStyle = glowGradient; // Fill the circle with our gradient
+      ctx.arc(px, py, r * 2.2 + pulse, 0, Math.PI * 2);
+      ctx.fillStyle = glowGradient;
       ctx.fill();
-      ctx.restore(); // Restore the previous state (clearing the gradient fill style)
+      ctx.restore();
 
       // --- B. Swirling Accretion Ring ---
       ctx.save();
       ctx.beginPath();
-      ctx.arc(player.x, player.y, r * 1.25 + pulse * 0.5, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(224, 170, 255, 0.7)'; // Outline color
-      ctx.lineWidth = 3; // Outline thickness
-
-      // Add a glowing effect
-      ctx.shadowColor = '#fff07dff';
+      ctx.arc(px, py, r * 1.25 + pulse * 0.5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(224, 170, 255, 0.7)';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#c77dff';
       ctx.shadowBlur = 15;
-
-      ctx.stroke(); // Draw the outline
+      ctx.stroke();
       ctx.restore();
 
       // --- C. The Event Horizon (Pitch Black Center) ---
       ctx.save();
       ctx.beginPath();
-      ctx.arc(player.x, player.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = '#000000'; // Solid black
-
-      // Make the black center emit a subtle black shadow/glow to blend into the colors
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#000000';
       ctx.shadowColor = '#000000';
       ctx.shadowBlur = 10;
-
-      ctx.fill(); // Fill the solid black circle
-
-      // Inner Event Horizon Border (A thin purple ring right on the edge of the black hole)
+      ctx.fill();
+      // Inner border ring
       ctx.strokeStyle = '#3c096c';
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.restore();
 
-      // --- 5. DRAW HUD (Heads Up Display) TEXT ---
+      // --- D. Player Name & Mass HUD Text (above the black hole) ---
       ctx.save();
-      ctx.font = '600 13px system-ui, sans-serif'; // Set font weight, size, and family
-      ctx.fillStyle = '#ffffff'; // White text
-      ctx.textAlign = 'center'; // Center the text horizontally over the X coordinate
-
-      // Add a small drop shadow to make the text readable against bright backgrounds
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
       ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
       ctx.shadowBlur = 4;
+      ctx.fillText(player.name, px, py - r - 12);
 
-      // Draw the player's name above the black hole
-      ctx.fillText(player.name, player.x, player.y - r - 12);
-
-      // Draw the mass below the name
       ctx.font = '500 11px system-ui, sans-serif';
-      ctx.fillStyle = '#c77dff'; // Purple text
-      ctx.fillText(`Mass: ${player.mass}`, player.x, player.y + 4);
+      ctx.fillStyle = '#c77dff';
+      ctx.fillText(`Mass: ${Math.floor(player.mass)}`, px, py + r + 18);
       ctx.restore();
 
-      // --- SCHEDULE THE NEXT FRAME ---
-      // requestAnimationFrame tells the browser: "Whenever you are ready to paint the next frame
-      // to the screen, call the `gameLoop` function again."
-      // This is what creates the continuous animation loop.
+      // -----------------------------------------------------------------------
+      // STEP 9: DRAW MINIMAP (bottom-right corner)
+      //
+      // A small rectangle that shows the entire world shrunk down.
+      // The player dot and mass objects are drawn as tiny dots on the minimap.
+      // -----------------------------------------------------------------------
+      const MM_W = 160;   // Minimap width in pixels
+      const MM_H = 120;   // Minimap height in pixels
+      const MM_X = vw - MM_W - 16; // 16px from the right edge
+      const MM_Y = vh - MM_H - 16; // 16px from the bottom edge
+      // Scale factors: how to convert a world coordinate to a minimap coordinate
+      const MM_SCALE_X = MM_W / WORLD_WIDTH;
+      const MM_SCALE_Y = MM_H / WORLD_HEIGHT;
+
+      ctx.save();
+
+      // Minimap background
+      ctx.fillStyle = 'rgba(5, 5, 15, 0.75)';
+      ctx.strokeStyle = 'rgba(157, 78, 221, 0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(MM_X, MM_Y, MM_W, MM_H, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // "Minimap" label
+      ctx.font = '500 9px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.textAlign = 'left';
+      ctx.fillText('MINIMAP', MM_X + 6, MM_Y + 11);
+
+      // Draw mass objects as tiny colored dots on the minimap
+      massObjects.forEach((obj) => {
+        ctx.beginPath();
+        ctx.arc(
+          MM_X + obj.x * MM_SCALE_X,
+          MM_Y + obj.y * MM_SCALE_Y,
+          1.5,
+          0, Math.PI * 2
+        );
+        ctx.fillStyle = obj.color;
+        ctx.fill();
+      });
+
+      // Draw the player as a glowing purple dot on the minimap
+      ctx.beginPath();
+      ctx.arc(
+        MM_X + player.x * MM_SCALE_X,
+        MM_Y + player.y * MM_SCALE_Y,
+        4,
+        0, Math.PI * 2
+      );
+      ctx.fillStyle = '#9d4edd';
+      ctx.shadowColor = '#c77dff';
+      ctx.shadowBlur = 8;
+      ctx.fill();
+
+      // Draw the visible viewport rectangle on the minimap (shows what the camera sees)
+      const vpW = vw * MM_SCALE_X;
+      const vpH = vh * MM_SCALE_Y;
+      const vpX = MM_X + Math.max(0, (player.x - vw / 2)) * MM_SCALE_X;
+      const vpY = MM_Y + Math.max(0, (player.y - vh / 2)) * MM_SCALE_Y;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.shadowBlur = 0;
+      ctx.strokeRect(vpX, vpY, vpW, vpH);
+
+      ctx.restore();
+
+      // -----------------------------------------------------------------------
+      // STEP 10: DRAW LEADERBOARD (top-right corner)
+      //
+      // For now this shows only the local player.
+      // When multiplayer is added, this list will include all connected players.
+      // -----------------------------------------------------------------------
+      const LB_X = vw - 176;
+      const LB_Y = 16;
+      const LB_W = 160;
+      const LB_LINE_H = 20;
+      const LB_ENTRIES = 1; // Just the local player for now
+
+      ctx.save();
+
+      // Leaderboard background panel
+      ctx.fillStyle = 'rgba(5, 5, 15, 0.75)';
+      ctx.strokeStyle = 'rgba(157, 78, 221, 0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(LB_X, LB_Y, LB_W, 16 + LB_ENTRIES * LB_LINE_H + 8, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Title
+      ctx.font = 'bold 10px system-ui, sans-serif';
+      ctx.fillStyle = '#c77dff';
+      ctx.textAlign = 'center';
+      ctx.fillText('LEADERBOARD', LB_X + LB_W / 2, LB_Y + 13);
+
+      // Player row
+      ctx.font = '500 11px system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.fillText(`#1  ${player.name}`, LB_X + 10, LB_Y + 13 + LB_LINE_H);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#c77dff';
+      ctx.fillText(`${Math.floor(player.mass)}`, LB_X + LB_W - 10, LB_Y + 13 + LB_LINE_H);
+
+      ctx.restore();
+
+      // -----------------------------------------------------------------------
+      // Schedule the next frame — this creates the continuous animation loop
+      // -----------------------------------------------------------------------
       animationFrameId = requestAnimationFrame(gameLoop);
     };
 
-    // Kick off the very first frame of the game loop!
+    // Kick off the first frame!
     animationFrameId = requestAnimationFrame(gameLoop);
 
-    // --- CLEANUP FUNCTION ---
-    // This function runs when the component is removed from the screen (unmounted).
-    // It's crucial to remove listeners and stop the loop, otherwise they keep running
-    // in the background forever and cause memory leaks and errors.
+    // -------------------------------------------------------------------------
+    // CLEANUP — runs when the component is unmounted (removed from screen).
+    // Remove all event listeners and cancel the animation loop to prevent memory leaks.
+    // -------------------------------------------------------------------------
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', handleMouseMove);
-      cancelAnimationFrame(animationFrameId); // Stop the game loop
+      cancelAnimationFrame(animationFrameId);
     };
-  }, []);
-  // Recall: That the '[]' means that the useEffect() only runs once.
+  }, []); // Empty array: this entire setup runs only once on mount
 
-
-  // --- COMPONENT RENDER ---
-  // This is the actual HTML that React puts on the page.
-  // We pass our `canvasRef` to the `ref` attribute so React can give us the DOM element.
+  // ---------------------------------------------------------------------------
+  // RENDER — Returns the <canvas> element that fills the entire screen.
+  // React attaches the DOM node to canvasRef after mounting.
+  // ---------------------------------------------------------------------------
   return (
     <canvas
       ref={canvasRef}
       style={{
-        display: 'block', // Removes tiny spacing issues sometimes caused by inline elements
-        width: '100vw',   // 100% of the viewport width
-        height: '100vh',  // 100% of the viewport height
-        cursor: 'crosshair', // Changes the mouse cursor to a crosshair over the game
+        display: 'block',      // Removes default inline spacing
+        width: '100vw',        // Fills full viewport width
+        height: '100vh',       // Fills full viewport height
+        cursor: 'crosshair',   // Crosshair cursor for the game
       }}
     />
   );
